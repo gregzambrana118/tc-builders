@@ -1,36 +1,24 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
-
-export async function middleware(request) {
-  let response = NextResponse.next({ request });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        getAll() { return request.cookies.getAll(); },
-        setAll(cookies) {
-          cookies.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
-          cookies.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
-        },
-      },
-    }
-  );
-
-  const { data: { user } } = await supabase.auth.getUser();
+ 
+/**
+ * Edge-safe auth routing. No Supabase imports here — the Edge runtime
+ * lacks Node globals that the Supabase client's dependencies expect.
+ * This only handles UX routing (send signed-out visitors to /login);
+ * real access control is enforced by Postgres Row-Level Security.
+ */
+export function middleware(request) {
+  const hasSessionCookie = request.cookies
+    .getAll()
+    .some((c) => c.name.startsWith("sb-") && c.name.includes("-auth-token") && c.value);
+ 
   const isLogin = request.nextUrl.pathname.startsWith("/login");
-
-  if (!user && !isLogin) {
+ 
+  if (!hasSessionCookie && !isLogin) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  if (user && isLogin) {
-    return NextResponse.redirect(new URL("/projects", request.url));
-  }
-  return response;
+  return NextResponse.next();
 }
-
+ 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|sw.js|.*\\.png$).*)"],
 };
